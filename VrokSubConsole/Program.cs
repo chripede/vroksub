@@ -241,7 +241,7 @@ namespace OSDbClient
             Console.WriteLine("Connecting...");
             #region Connect and login
             osdbProxy = XmlRpcProxyGen.Create<IOSDb>();
-            osdbProxy.Url = "http://www.opensubtitles.org/xml-rpc";
+            osdbProxy.Url = "http://api.opensubtitles.org/xml-rpc";
             osdbProxy.KeepAlive = false;
             if (myFiles.Count == 0) { Console.WriteLine("No movies found"); }
             XmlRpcStruct Login = osdbProxy.LogIn("", "", "en", "vroksub");
