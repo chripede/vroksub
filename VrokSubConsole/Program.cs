@@ -1,39 +1,33 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
-using System.Diagnostics;
-using System.Drawing;
 using System.Net;
 using System.IO;
 using CookComputing.XmlRpc;
 using System.Configuration;
 
-namespace OSDbClient
+namespace VrokSub
 {
-
     class Program
     {
-        private static IOSDb osdbProxy;
+        private static IOSDb _osdbProxy;
         private static string CDFormat = ConfigurationManager.AppSettings["CDFormat"];
         private static string FileFormat = ConfigurationManager.AppSettings["FileFormat"];
         private static string FolderFormat = ConfigurationManager.AppSettings["FolderFormat"];
-        private static string theToken;
+        private static string _theToken;
 
-        private static List<string> movieFormats = new List<string>(ConfigurationManager.AppSettings["MovieFormat"].Split(','));// { ".srt", ".sub", ".smi", ".txt" };
-        private static List<string> subtitleFormats = new List<string>(ConfigurationManager.AppSettings["FolderFormat"].Split(','));// { ".srt", ".sub", ".smi", ".txt" };
-        private static string[] langs;
-        private static List<langMap> theLangMap = Utils.generateLangMap();
-        private static int dlCount = 0;
+        private static List<string> movieFormats = new List<string>(ConfigurationManager.AppSettings["MovieFormat"].Split(','));
+        private static List<string> subtitleFormats = new List<string>(ConfigurationManager.AppSettings["FolderFormat"].Split(','));
+        private static string[] _langs;
+        private static List<langMap> theLangMap = Utils.GenerateLangMap();
+        private static int _dlCount;
         private static List<MovieFile> myFiles = new List<MovieFile>();
 
         static void Main(string[] args)
         {
             if (args.Length < 2)
             {
-                Console.WriteLine("Homepage with latest version: http://vrokolos.blogspot.com/2008/03/vroksub-released.html");
-                Console.WriteLine("Just released this simple command line program that automatically downloads subtitles for your movies. You just pass a folder path and a preferred language list and it searches for subtitles using your avi files. It uses opensubtitles for the search and it requires the .net 2 framework runtimes which you probably already have.");
-                Console.WriteLine("");
-                Console.WriteLine("Useage:");
+                Console.WriteLine("Usage:");
                 Console.WriteLine("");
                 Console.WriteLine("vroksub.exe \"[Folder Path]\" [Language Code Sequence] [Params]");
                 Console.WriteLine("");
@@ -50,6 +44,7 @@ namespace OSDbClient
                 Console.WriteLine(" /folders will create a folder for each movie and move all files there. If /covers is used with this then a folder.jpg will also be created");
                 Console.WriteLine(" /nosubfolders will not search every subfolder of the given folder for movie files");
                 Console.WriteLine(" /move=\"[Output Path]\" will move all files and folders to the given path. Useful if combined with folders");
+                Console.WriteLine(" /nolanguageinfilename will not add the language to the filename. Requires that you only ask for subtitles in one language");
                 Console.WriteLine("");
                 Console.WriteLine("Examples:");
                 Console.WriteLine("vroksub.exe \"c:\\my videos\" gr,en");
@@ -74,16 +69,17 @@ namespace OSDbClient
             else
             {
                 List<string> argList = new List<string>(args);
-                argList.ForEach(new Action<string>(tolower));
+                argList.ForEach(ToLower);
                 bool ren = false;
                 bool newOnly = false;
                 bool nfo = false;
                 bool folders = false;
                 bool imdb = false;
                 bool covers = false;
-                string inputPath = "";
+                bool noLanguageInFilename = false;
+                string inputPath;
                 string outputPath = "";
-                string langSeq = "";
+                string langSeq;
                 foreach (string arg in argList)
                 {
                     if (arg.StartsWith("/move="))
@@ -93,14 +89,15 @@ namespace OSDbClient
                 }
                 if (args.Length > 2)
                 {
-                    ren = (argList.Contains("/rename"));
-                    newOnly = (argList.Contains("/newonly"));
-                    nfo = (argList.Contains("/nfo"));
-                    folders = (argList.Contains("/folders"));
-                    covers = (argList.Contains("/covers"));
+                    ren = argList.Contains("/rename");
+                    newOnly = argList.Contains("/newonly");
+                    nfo = argList.Contains("/nfo");
+                    folders = argList.Contains("/folders");
+                    covers = argList.Contains("/covers");
                     imdb = (nfo || covers);
-                    //                    imdb = (argList.Contains("/imdb")) || covers;
+                    noLanguageInFilename = argList.Contains("/nolanguageinfilename");
                 }
+                argList.Remove("/nolanguageinfilename");
                 argList.Remove("/rename");
                 argList.Remove("/newonly");
                 argList.Remove("/nfo");
@@ -118,11 +115,18 @@ namespace OSDbClient
                     langSeq = args[1];
                 }
 
-                Go(inputPath, outputPath, Get2CodeStr(langSeq), false, ren, newOnly, nfo, folders, imdb, covers, false);
+                if (langSeq.Contains(",") && noLanguageInFilename)
+                {
+                    Console.WriteLine("Multiple countrycodes not supported with parameter /nolanguageinfilename");
+                    Console.ReadLine();
+                    return;
+                }
+
+                Go(inputPath, outputPath, Get2CodeStr(langSeq), false, ren, newOnly, nfo, folders, imdb, covers, noLanguageInFilename);
             }
         }
 
-        private static void tolower(string a)
+        private static void ToLower(string a)
         {
             a = a.ToLower();
         }
@@ -130,11 +134,11 @@ namespace OSDbClient
         private static string Get3CodeStr(string the2CodeStr)
         {
             string c3 = "";
-            foreach (string l2code in the2CodeStr.Split(','))
+            foreach (string l2Code in the2CodeStr.Split(','))
             {
                 foreach (langMap l in theLangMap)
                 {
-                    if (l.two.Contains(l2code))
+                    if (l.two.Contains(l2Code))
                     {
                         if (!c3.Contains(l.three))
                         {
@@ -150,11 +154,11 @@ namespace OSDbClient
         private static string Get2CodeStr(string the2CodeStr)
         {
             string c3 = "";
-            foreach (string l2code in the2CodeStr.Split(','))
+            foreach (string l2Code in the2CodeStr.Split(','))
             {
                 foreach (langMap l in theLangMap)
                 {
-                    if (l.two.Contains(l2code))
+                    if (l.two.Contains(l2Code))
                     {
                         if (!c3.Contains(l.two))
                         {
@@ -167,38 +171,38 @@ namespace OSDbClient
             return c3;
         }
 
-        private static void Go(string FolderArg, string outputPath, string LangArg, bool overwrite, bool rename, bool newOnly, bool nfo, bool folders, bool imdb, bool covers, bool nosubfolders)
+        private static void Go(string folderArg, string outputPath, string langArg, bool overwrite, bool rename, bool newOnly, bool nfo, bool folders, bool imdb, bool covers, bool noLanguageInFilename)
         {
             Console.WriteLine("Searching for movie files");
             #region Get Movie Files
-            if (File.Exists(FolderArg))
+            if (File.Exists(folderArg))
             {
                 if (outputPath == "")
                 {
-                    outputPath = Path.GetDirectoryName(FolderArg);
+                    outputPath = Path.GetDirectoryName(folderArg);
                 }
                 MovieFile theFile = new MovieFile();
-                theFile.filename = FolderArg;
-                theFile.getOldSubtitle(subtitleFormats, theLangMap, FolderArg);
+                theFile.filename = folderArg;
+                theFile.getOldSubtitle(subtitleFormats, theLangMap, folderArg);
                 myFiles.Add(theFile);
             }
-            else if (Directory.Exists(FolderArg))
+            else if (Directory.Exists(folderArg))
             {
                 if (outputPath == "")
                 {
-                    outputPath = FolderArg;
+                    outputPath = folderArg;
                 }
                 foreach (string extension in movieFormats)
                 {
-                    foreach (string filename in Utils.GetFilesByExtensions(FolderArg, "." + extension, SearchOption.AllDirectories))
+                    foreach (string filename in Utils.GetFilesByExtensions(folderArg, "." + extension, SearchOption.AllDirectories))
                     {
                         MovieFile theFile = new MovieFile();
                         theFile.filename = filename;
-                        theFile.getOldSubtitle(subtitleFormats, theLangMap, FolderArg);
+                        theFile.getOldSubtitle(subtitleFormats, theLangMap, folderArg);
                         myFiles.Add(theFile);
                     }
                 }
-                Console.WriteLine("Found " + myFiles.Count.ToString() + " Movie Files");
+                Console.WriteLine("Found " + myFiles.Count + " Movie Files");
             }
             else
             {
@@ -208,16 +212,15 @@ namespace OSDbClient
 
             Console.WriteLine("Creating subtitle request from movie files");
             #region Create subtitle request from movie files
-            langs = Get3CodeStr(LangArg).Split(',');
-            List<string> l3 = new List<string>(langs);
-            List<string> l2 = new List<string>(LangArg.Split(','));
-            subInfo[] si = new subInfo[myFiles.Count * langs.Length];
+            _langs = Get3CodeStr(langArg).Split(',');
+            List<string> l3 = new List<string>(_langs);
+            subInfo[] si = new subInfo[myFiles.Count * _langs.Length];
             int i = 0;
             foreach (MovieFile theFile in myFiles)
             {
                 if ((newOnly && (theFile.oldSubtitle == "")) || (!newOnly))
                 {
-                    foreach (string lang in langs)
+                    foreach (string lang in _langs)
                     {
                         try
                         {
@@ -240,33 +243,33 @@ namespace OSDbClient
 
             Console.WriteLine("Connecting...");
             #region Connect and login
-            osdbProxy = XmlRpcProxyGen.Create<IOSDb>();
-            osdbProxy.Url = "http://api.opensubtitles.org/xml-rpc";
-            osdbProxy.KeepAlive = false;
+            _osdbProxy = XmlRpcProxyGen.Create<IOSDb>();
+            _osdbProxy.Url = "http://api.opensubtitles.org/xml-rpc";
+            _osdbProxy.KeepAlive = false;
             if (myFiles.Count == 0) { Console.WriteLine("No movies found"); }
-            XmlRpcStruct Login = osdbProxy.LogIn("", "", "en", "vroksub");
-            theToken = Login["token"].ToString();
+            XmlRpcStruct login = _osdbProxy.LogIn("", "", "en", "vroksub");
+            _theToken = login["token"].ToString();
             #endregion
 
             Console.WriteLine("Searching for subtitles...");
             #region Search for subtitles
-            subrt SubResults = null;
+            subrt subResults = null;
             try
             {
-                SubResults = osdbProxy.SearchSubtitles(theToken, si);
+                subResults = _osdbProxy.SearchSubtitles(_theToken, si);
             }
             catch (Exception e)
             {
-
+                Console.WriteLine("Error when searching for subtitle: " + e.Message);
             }
             #endregion
 
             Console.WriteLine("Found subtitles:");
             #region Choose best subtitle
-            if (SubResults != null)
+            if (subResults != null)
             {
-                BindingList<subRes> g = new BindingList<subRes>(SubResults.data);
-                dlCount = 0;
+                BindingList<subRes> g = new BindingList<subRes>(subResults.data);
+                _dlCount = 0;
                 foreach (MovieFile mf in myFiles)
                 {
                     try
@@ -276,7 +279,7 @@ namespace OSDbClient
                             if (mf.SelectBestSubtitle(g, l3))
                             {
                                 Console.WriteLine(mf.subRes.MovieName + " - " + mf.subRes.LanguageName);
-                                dlCount++;
+                                _dlCount++;
                             }
                         }
                     }
@@ -289,7 +292,7 @@ namespace OSDbClient
 
                 Console.WriteLine("Downloading subtitles...");
                 #region Download Subtitles
-                string[] ids = new string[dlCount];
+                string[] ids = new string[_dlCount];
                 int k = 0;
                 foreach (MovieFile myf in myFiles)
                 {
@@ -299,7 +302,7 @@ namespace OSDbClient
                         k++;
                     }
                 }
-                subdata files = osdbProxy.DownloadSubtitles(theToken, ids);
+                subdata files = _osdbProxy.DownloadSubtitles(_theToken, ids);
                 #endregion
 
                 if (imdb)
@@ -312,7 +315,7 @@ namespace OSDbClient
                         {
                             try
                             {
-                                myf.imdbinfo = osdbProxy.GetIMDBMovieDetails(theToken, "0" + myf.subRes.IDMovieImdb).data;
+                                myf.imdbinfo = _osdbProxy.GetIMDBMovieDetails(_theToken, "0" + myf.subRes.IDMovieImdb).data;
                             }
                             catch (Exception ex)
                             {
@@ -324,111 +327,111 @@ namespace OSDbClient
                 }
 
                 Console.WriteLine("Saving subtitles...");
-     
-                            #region Process (rename, create folders, savenfo and save) subtitles
-                            foreach (subtitle s in files.data)
+
+                #region Process (rename, create folders, savenfo and save) subtitles
+                foreach (subtitle s in files.data)
+                {
+                    foreach (MovieFile m in myFiles)
+                    {
+                        try
+                        {
+                            if (m.subtitleId == s.idsubtitlefile)
+                            {
+                                m.subtitle = Utils.DecodeAndDecompress(s.data);
+                                if (outputPath != folderArg)
                                 {
-                                    foreach (MovieFile m in myFiles)
+                                    if (!Directory.Exists(outputPath))
+                                    {
+                                        Directory.CreateDirectory(outputPath);
+                                    }
+                                    if (!File.Exists(outputPath + "\\" + Path.GetFileName(m.filename)))
                                     {
                                         try
                                         {
-                                            if (m.subtitleId == s.idsubtitlefile)
-                                            {
-                                                m.subtitle = Utils.DecodeAndDecompress(s.data);
-                                                if (outputPath != FolderArg)
-                                                {
-                                                    if (!Directory.Exists(outputPath))
-                                                    {
-                                                        Directory.CreateDirectory(outputPath);
-                                                    }
-                                                    if (!File.Exists(outputPath + "\\" + Path.GetFileName(m.filename)))
-                                                    {
-                                                        try
-                                                        {
-                                                            File.Move(m.filename, outputPath + "\\" + Path.GetFileName(m.filename));
-                                                            m.originalfilename = Path.GetFileName(m.filename);
-                                                            m.filename = outputPath + "\\" + Path.GetFileName(m.filename);
-                                                        }
-                                                        catch (Exception ex)
-                                                        {
-                                                            Console.WriteLine("Error moving movie: " + m.filename + "\n" + ex.Message);
-                                                        }
-                                                    }                                    
-                                                }
-                                                if (folders)
-                                                {
-                                                    m.newFolder(outputPath, FolderFormat);
-                                                }
-                                                if (rename)
-                                                {
-                                                    m.rename(FileFormat, CDFormat);
-                                                }
-                                                if (nfo)
-                                                {
-                                                    m.saveNfo();
-                                                }
-                                                m.saveSubtitle(overwrite);
-                                                continue;
-                                            }
+                                            File.Move(m.filename, outputPath + "\\" + Path.GetFileName(m.filename));
+                                            m.originalfilename = Path.GetFileName(m.filename);
+                                            m.filename = outputPath + "\\" + Path.GetFileName(m.filename);
                                         }
                                         catch (Exception ex)
                                         {
-                                            Console.WriteLine("Error saving subtitle for: " + m.filename + "\n" + ex.Message);
+                                            Console.WriteLine("Error moving movie: " + m.filename + "\n" + ex.Message);
                                         }
                                     }
                                 }
-                            }
-                            #endregion
-
-            if (covers)
-                {
-                    Console.WriteLine("Downloading covers...");
-                    #region Download covers
-                    System.Net.WebClient Client = new WebClient();
-
-                    foreach (MovieFile myf in myFiles)
-                    {
-                        if (myf.imdbinfo != null)
-                        {
-                            if ((myf.imdbinfo.cover != null) && (myf.imdbinfo.cover != ""))
-                            {
-                                try
+                                if (folders)
                                 {
-                                    Stream strm = Client.OpenRead(myf.imdbinfo.cover);
-                                    FileStream writecover = new FileStream(Path.GetDirectoryName(myf.filename) + "\\" + Path.GetFileNameWithoutExtension(myf.filename) + ".jpg", FileMode.Create);
-                                    int a;
-                                    do
-                                    {
-                                        a = strm.ReadByte();
-                                        writecover.WriteByte((byte)a);
-                                    }
-                                    while (a != -1);
-                                    writecover.Position = 0;
-                                    File.Copy(Path.GetDirectoryName(myf.filename) + "\\" + Path.GetFileNameWithoutExtension(myf.filename) + ".jpg", Path.GetDirectoryName(myf.filename) + "\\" + Path.GetFileName(myf.filename) + ".jpg");
-                                    if (folders)
-                                    {
-                                        File.Copy(Path.GetDirectoryName(myf.filename) + "\\" + Path.GetFileNameWithoutExtension(myf.filename) + ".jpg", Path.GetDirectoryName(myf.filename) + "\\folder.jpg");
-                                    }
-                                    strm.Close();
-                                    writecover.Close();
+                                    m.newFolder(outputPath, FolderFormat);
                                 }
-                                catch (Exception ex)
+                                if (rename)
                                 {
-                                    Console.WriteLine("Error saving cover for: " + myf.filename + "\n" + ex.Message);
+                                    m.rename(FileFormat, CDFormat);
                                 }
+                                if (nfo)
+                                {
+                                    m.saveNfo();
+                                }
+                                m.SaveSubtitle(overwrite, noLanguageInFilename);
+                                continue;
                             }
                         }
-                    #endregion
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine("Error saving subtitle for: " + m.filename + "\n" + ex.Message);
+                        }
                     }
                 }
-
-                Console.WriteLine("Disconnecting...");
-                #region Disconnect
-                osdbProxy.LogOut(theToken);
+            }
                 #endregion
 
+            if (covers)
+            {
+                Console.WriteLine("Downloading covers...");
+                #region Download covers
+                WebClient client = new WebClient();
+
+                foreach (MovieFile myf in myFiles)
+                {
+                    if (myf.imdbinfo != null)
+                    {
+                        if ((myf.imdbinfo.cover != null) && (myf.imdbinfo.cover != ""))
+                        {
+                            try
+                            {
+                                Stream strm = client.OpenRead(myf.imdbinfo.cover);
+                                FileStream writecover = new FileStream(Path.GetDirectoryName(myf.filename) + "\\" + Path.GetFileNameWithoutExtension(myf.filename) + ".jpg", FileMode.Create);
+                                int a;
+                                do
+                                {
+                                    a = strm.ReadByte();
+                                    writecover.WriteByte((byte)a);
+                                }
+                                while (a != -1);
+                                writecover.Position = 0;
+                                File.Copy(Path.GetDirectoryName(myf.filename) + "\\" + Path.GetFileNameWithoutExtension(myf.filename) + ".jpg", Path.GetDirectoryName(myf.filename) + "\\" + Path.GetFileName(myf.filename) + ".jpg");
+                                if (folders)
+                                {
+                                    File.Copy(Path.GetDirectoryName(myf.filename) + "\\" + Path.GetFileNameWithoutExtension(myf.filename) + ".jpg", Path.GetDirectoryName(myf.filename) + "\\folder.jpg");
+                                }
+                                strm.Close();
+                                writecover.Close();
+                            }
+                            catch (Exception ex)
+                            {
+                                Console.WriteLine("Error saving cover for: " + myf.filename + "\n" + ex.Message);
+                            }
+                        }
+                    }
+                #endregion
+                }
             }
+
+            Console.WriteLine("Disconnecting...");
+            #region Disconnect
+            _osdbProxy.LogOut(_theToken);
+            #endregion
 
         }
 
     }
+
+}

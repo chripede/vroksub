@@ -4,7 +4,8 @@ using System.Text;
 using System.IO;
 using System.IO.Compression;
 using System.Text.RegularExpressions;
-namespace OSDbClient
+
+namespace VrokSub
 {
     class Utils
     {
@@ -129,7 +130,7 @@ namespace OSDbClient
 
         #region LangCodes
 
-        public static List<langMap> generateLangMap()
+        public static List<langMap> GenerateLangMap()
         {
             List<langMap> theLangMap = new List<langMap>();
             theLangMap.Add(new langMap("cs", "cze,ces", "Czech"));
@@ -168,7 +169,7 @@ namespace OSDbClient
             return theLangMap;
         }
 
-        public static string parseLangCodeFromFile(string filename, List<langMap> langs)
+        public static string ParseLangCodeFromFile(string filename, List<langMap> langs)
         {
             string name = Path.GetFileNameWithoutExtension(filename);
             string[] nameSplit = name.Split('.');

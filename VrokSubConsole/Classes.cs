@@ -3,7 +3,8 @@ using System.ComponentModel;
 using CookComputing.XmlRpc;
 using System.IO;
 using System;
-namespace OSDbClient
+
+namespace VrokSub
 {
 
     public class imdbdata
@@ -135,9 +136,17 @@ namespace OSDbClient
         public string oldSubtitle { get; set; }
         public imdbdata imdbinfo { get; set; }
         public string oldSubtitleLang { get; set; }
-        public string GetSubtitleFileName()
+
+        public string GetSubtitleFileName(bool noLanguageInFilename)
         {
-            return Path.GetDirectoryName(filename) + "\\" + Path.GetFileNameWithoutExtension(filename) + "." + subRes.ISO639 + "." + subRes.SubFormat;
+            var path = Path.GetDirectoryName(filename) + "\\" + Path.GetFileNameWithoutExtension(filename);
+
+            if (!noLanguageInFilename)
+                path += "." + subRes.ISO639;
+
+            path += "." + subRes.SubFormat;
+
+            return path;
         }
 
         public string GetName()
@@ -145,9 +154,9 @@ namespace OSDbClient
             return Path.GetFileNameWithoutExtension(filename);
         }
 
-        public void saveSubtitle(bool overwrite)
+        public void SaveSubtitle(bool overwrite, bool noLanguageInFilename)
         {
-            string filenameToWrite = GetSubtitleFileName();
+            string filenameToWrite = GetSubtitleFileName(noLanguageInFilename);
             if (File.Exists(filenameToWrite))
             {
                 if (overwrite)
@@ -159,7 +168,7 @@ namespace OSDbClient
                     return;
                 }
             }
-            FileStream fStream = new FileStream(GetSubtitleFileName(), FileMode.CreateNew);
+            FileStream fStream = new FileStream(GetSubtitleFileName(noLanguageInFilename), FileMode.CreateNew);
 			
 			BinaryWriter bw = new BinaryWriter(fStream);
 
@@ -184,7 +193,7 @@ namespace OSDbClient
                 if (file == filename) { continue; }
                 if (subtitleFormats.Contains(Path.GetExtension(file)))
                 {
-                    string l = Utils.parseLangCodeFromFile(file, theLangMap);
+                    string l = Utils.ParseLangCodeFromFile(file, theLangMap);
                     if (bestOldSubFile == "")
                     { 
                         bestOldSubFile = file;
